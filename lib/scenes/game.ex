@@ -9,6 +9,7 @@ defmodule Snake.Scene.Game do
   @tile_radius 8
   @snake_starting_size 5
   @frame_ms 192
+  @pellet_score 1
 
   def init(_arg, opts) do
     viewport = opts[:viewport]
@@ -20,6 +21,11 @@ defmodule Snake.Scene.Game do
     snake_start_coords = {
       trunc(vp_tile_width / 2),
       trunc(vp_tile_height / 2)
+    }
+
+    pellet_start_coords = {
+      vp_tile_width - 2,
+      trunc(vp_tile_width / 2)
     }
 
     {:ok, timer} = :timer.send_interval(@frame_ms, :frame)
@@ -37,7 +43,8 @@ defmodule Snake.Scene.Game do
           body: [snake_start_coords],
           size: @snake_starting_size,
           direction: {1, 0}
-        }
+        },
+        pellet: pellet_start_coords
       }
     }
 
@@ -60,16 +67,76 @@ defmodule Snake.Scene.Game do
     {:noreply, %{state | frame_count: frame_count + 1}}
   end
 
+  def handle_input({:key, {"left", :press, _}}, _context, state) do
+    {:noreply, update_snake_direction(state, {-1, 0})}
+  end
+
+  def handle_input({:key, {"right", :press, _}}, _context, state) do
+    {:noreply, update_snake_direction(state, {1, 0})}
+  end
+
+  def handle_input({:key, {"up", :press, _}}, _context, state) do
+    {:noreply, update_snake_direction(state, {0, -1})}
+  end
+
+  def handle_input({:key, {"down", :press, _}}, _context, state) do
+    {:noreply, update_snake_direction(state, {0, 1})}
+  end
+
+  def handle_input(_input, _context, state) do
+    {:noreply, state}
+  end
+
+  defp update_snake_direction(state, direction) do
+    put_in(state, [:objects, :snake, :direction], direction)
+  end
+
   defp move_snake(%{objects: %{snake: snake}} = state) do
     [head | _] = snake.body
     new_head_pos = move(state, head, snake.direction)
 
     new_body = Enum.take [new_head_pos | snake.body], snake.size
-    put_in(state, [:objects, :snake, :body], new_body)
+
+    state
+    |> put_in([:objects, :snake, :body], new_body)
+    |> maybe_eat_pellet(new_head_pos)
   end
 
   defp move(%{tile_width: w, tile_height: h}, {pos_x, pos_y}, {vec_x, vec_y}) do
     {rem(pos_x + vec_x + w, w), rem(pos_y + vec_y + h, h)}
+  end
+
+  defp maybe_eat_pellet(state = %{objects: %{pellet: pellet_coords}}, snake_head_coords)
+  when pellet_coords == snake_head_coords do
+    state
+    |> randomize_pellet
+    |> add_score
+    |> grow_snake
+  end
+
+  defp maybe_eat_pellet(state, _), do: state
+
+  defp randomize_pellet(state = %{tile_width: w, tile_height: h}) do
+    pellet_coords = {
+      Enum.random(0..(w-1)),
+      Enum.random(0..(h-1))
+    }
+
+    validate_pellet_coords(state, pellet_coords)
+  end
+
+  defp validate_pellet_coords(state = %{objects: %{snake: %{body: snake}}}, coords) do
+    if coords in snake,
+      do: randomize_pellet(state),
+      else: put_in(state, [:objects, :pellet], coords)
+  end
+
+  defp add_score(state) do
+    update_in(state, [:score],  &(&1 + @pellet_score))
+  end
+
+  defp grow_snake(state) do
+    update_in(state, [:objects, :snake, :size], &(&1 + 1))
   end
 
   defp draw_score(graph, score) do
@@ -87,6 +154,10 @@ defmodule Snake.Scene.Game do
     Enum.reduce(snake, graph, fn {x, y}, graph ->
       draw_tile(graph, x, y, fill: :lime)
     end)
+  end
+
+  defp draw_object(graph, :pellet, {pellet_x, pellet_y}) do
+    draw_tile(graph, pellet_x, pellet_y, fill: :yellow, id: :pellet)
   end
 
   defp draw_tile(graph, x, y, opts) do
