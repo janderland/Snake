@@ -1,4 +1,4 @@
-defmodule Snake.Scene.Game do
+defmodule Snake.Scenes.Game do
   use Scenic.Scene
   alias Scenic.Graph
   alias Scenic.ViewPort
@@ -10,6 +10,7 @@ defmodule Snake.Scene.Game do
   @snake_starting_size 5
   @frame_ms 192
   @pellet_score 1
+  @game_over_screen Snake.Scenes.GameOver
 
   def init(_arg, opts) do
     viewport = opts[:viewport]
@@ -100,6 +101,7 @@ defmodule Snake.Scene.Game do
     state
     |> put_in([:objects, :snake, :body], new_body)
     |> maybe_eat_pellet(new_head_pos)
+    |> maybe_die
   end
 
   defp move(%{tile_width: w, tile_height: h}, {pos_x, pos_y}, {vec_x, vec_y}) do
@@ -112,9 +114,16 @@ defmodule Snake.Scene.Game do
     |> randomize_pellet
     |> add_score
     |> grow_snake
+    |> maybe_die
   end
 
   defp maybe_eat_pellet(state, _), do: state
+
+  defp maybe_die(state = %{viewport: vp, objects: %{snake: %{body: snake}}, score: score}) do
+    if length(Enum.uniq(snake)) != length(snake),
+      do: ViewPort.set_root(vp, {@game_over_screen, score})
+    state
+  end
 
   defp randomize_pellet(state = %{tile_width: w, tile_height: h}) do
     pellet_coords = {
